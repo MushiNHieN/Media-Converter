@@ -3,12 +3,16 @@ import ffmpeg
 import os
 import threading
 from options import file_extensions, quality_presets
+from utils import *
+import time
 
 
 def convert(input_files, output_path):
+    global start_time
+    start_time = time.time()
     extension = convert_extension_select.get()
     preset = convert_preset_select.get()
-
+    update_convert_time()
     # Get file name w/o extension
     for i, file in enumerate(input_files):
         convert_count_label.configure(text=f'{i+1} of {len(input_files)}')
@@ -25,12 +29,15 @@ def convert(input_files, output_path):
             .output(output_file, format=extension, preset=preset)
             .run()
         )
+
     convert_progress_label.configure(text=f'Done!', text_color='#07fc03')
     convert_count_label.configure(text='', text_color='cyan')
+    convert_time_elapsed_label.after_cancel(convert_update_id)
 
 
 def cut(input_file, output_path):
-
+    global start_time
+    start_time = time.time()
     extension = os.path.splitext(os.path.basename(input_file.name))[1]
     filename = os.path.splitext(os.path.basename(input_file.name))[0]
     begin_time = cut_time_entry_1.get()
@@ -38,13 +45,14 @@ def cut(input_file, output_path):
     cut_progress_label.configure(
         text=f'Cutting {filename} from {begin_time} for {duration_time}')
     output_file = os.path.join(output_path, filename + f'.{extension}')
+    update_cut_time()
 
     (
         ffmpeg.input(input_file.name, ss=begin_time, t=duration_time)
         .output(output_file)
         .run()
     )
-
+    cut_time_elapsed_label.after_cancel(cut_update_id)
     cut_progress_label.configure(text='Done!', text_color='#07fc03')
 
 
@@ -73,7 +81,23 @@ def open_file_dialog():
         video_info = next(
             (stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
         cut_select_file_label.configure(
-            text=f"{file_name} selected\n Duration: {video_info.get('duration')} seconds")
+            text=f"{file_name} selected\n Duration: {parse_time_seconds(int(float(video_info.get('duration'))))}")
+
+
+def update_convert_time():
+    global convert_update_id
+    current_time = time.strftime(
+        "%H:%M:%S", time.gmtime(time.time() - start_time))
+    convert_time_elapsed_label.configure(text=f'Elapsed time: {current_time}')
+    convert_update_id = convert_time_elapsed_label.after(1000, update_convert_time)
+
+
+def update_cut_time():
+    global cut_update_id
+    current_time = time.strftime(
+        "%H:%M:%S", time.gmtime(time.time() - start_time))
+    cut_time_elapsed_label.configure(text=f'Elapsed time: {current_time}')
+    cut_update_id = cut_time_elapsed_label.after(1000, update_cut_time)
 
 
 def select_convert_output_path():
@@ -99,6 +123,7 @@ def detect_extension(file_ext):
     convert_extension_select.configure(values=file_extensions[ext])
     convert_preset_select.configure(values=quality_presets)
     convert_button.pack(pady=10)
+
 
 def time_entry_changed(event):
     # Get the current entry value
@@ -130,10 +155,10 @@ def on_entry_key_press(event):
 
 # GUI
 root = ctk.CTk()
-root.geometry('600x600')
+root.geometry('600x700')
 root.title('HieNApps Media Converter')
 
-tab = ctk.CTkTabview(root, width=575, height=575)
+tab = ctk.CTkTabview(root, width=575, height=650)
 tab.pack()
 
 convert_tab = tab.add('Convert')
@@ -170,6 +195,10 @@ convert_progress_label.pack(pady=10)
 convert_count_label = ctk.CTkLabel(convert_tab, text='', text_color='cyan')
 convert_count_label.pack(pady=10)
 
+convert_time_elapsed_label = ctk.CTkLabel(
+    convert_tab, text='', text_color='cyan')
+convert_time_elapsed_label.pack(pady=10)
+
 convert_button = ctk.CTkButton(convert_tab, text='Convert', command=lambda: threading.Thread(
     target=convert, args=(convert_file_path, convert_output_path)).start())
 
@@ -196,25 +225,34 @@ cut_time_entry_2 = ctk.CTkEntry(
     cut_tab, width=150, placeholder_text='Duration of cut (xx:xx:xx)', text_color='white')
 cut_time_entry_2.pack(pady=10)
 
+cut_time_entry_1.bind(
+    '<KeyRelease>', command=time_entry_changed)
+cut_time_entry_1.bind(
+    '<Key>', command=on_entry_key_press)
+
+cut_time_entry_2.bind(
+    '<KeyRelease>', command=time_entry_changed)
+cut_time_entry_2.bind(
+    '<Key>', command=on_entry_key_press)
+
+cut_time_elapsed_label = ctk.CTkLabel(cut_tab, text='', text_color='cyan')
+cut_time_elapsed_label.pack(pady=10)
+
+cut_progress_label = ctk.CTkLabel(cut_tab, text='', text_color='cyan')
+cut_progress_label.pack(pady=10)
+
 cut_button = ctk.CTkButton(cut_tab, text='Cut', command=lambda: threading.Thread(
     target=cut, args=(cut_file_path, cut_output_path)).start())
 cut_button.pack(pady=10)
 
-cut_time_entry_1.bind(
-    '<KeyRelease>', command=time_entry_changed)
-cut_time_entry_1.bind(
-    '<Key>', command=on_entry_key_press)
 
-cut_time_entry_2.bind(
-    '<KeyRelease>', command=time_entry_changed)
-cut_time_entry_2.bind(
-    '<Key>', command=on_entry_key_press)
 
-cut_progress_label = ctk.CTkLabel(cut_tab, text='', text_color='cyan')
-cut_progress_label.pack(pady=10)
+
 # center window on screen
 root.update_idletasks()  # Update geometry
 x = (root.winfo_screenwidth() - root.winfo_reqwidth()) // 2
 y = (root.winfo_screenheight() - root.winfo_reqheight()) // 2
 root.geometry("+{}+{}".format(x, y))
+
+
 root.mainloop()
